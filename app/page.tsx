@@ -1,113 +1,261 @@
+"use client";
+import React, { useState, useRef, ChangeEvent } from "react";
 import Image from "next/image";
+import Webcam from "react-webcam";
 
-export default function Home() {
+interface Prediction {
+  class: string;
+  score: number;
+}
+
+const Home: React.FC = () => {
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [webcamEnabled, setWebcamEnabled] = useState<boolean>(false);
+  const [prediction, setPrediction] = useState<Prediction[]>([]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [anyError, setAnyError] = useState<boolean>(false);
+
+  const webcamRef = useRef<Webcam>(null);
+
+  const handleUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageSrc(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCapture = () => {
+    if (webcamRef.current) {
+      const imageSrc = webcamRef.current.getScreenshot();
+      setImageSrc(imageSrc || null);
+      setWebcamEnabled(false);
+
+      // Convert base64 image to file object
+      if (imageSrc) {
+        const byteString = atob(imageSrc.split(",")[1]);
+        const mimeString = imageSrc.split(",")[0].split(":")[1].split(";")[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeString });
+        const file = new File([blob], "capture.jpg", { type: mimeString });
+        setSelectedFile(file);
+      }
+    }
+  };
+
+  const getAnimalName = (cls: string) => {
+    switch (cls) {
+      case "deer":
+        return "사슴";
+      case "cat":
+        return "고양이";
+      case "fox":
+        return "여우";
+      case "dog":
+        return "강아지";
+      case "rabbit":
+      default:
+        return "토끼";
+    }
+  };
+
+  const getAnimalIcon = (cls: string) => {
+    switch (cls) {
+      case "deer":
+        return "/animals/deer.png";
+      case "cat":
+        return "/animals/cat.png";
+      case "fox":
+        return "/animals/fox.png";
+      case "dog":
+        return "/animals/dog.png";
+      case "rabbit":
+      default:
+        return "/animals/rabbit.png";
+    }
+  };
+
+  const analyzeImage = async () => {
+    setLoading(true);
+    if (selectedFile) {
+      try {
+        const formData = new FormData();
+        formData.append("image", selectedFile);
+
+        const response = await fetch("/api/animal", {
+          method: "POST",
+          body: formData,
+          signal: AbortSignal.timeout(10000),
+        });
+
+        const data = (await response.json()) as Prediction[];
+        const sorted = data.sort((a, b) => b.score - a.score);
+        setPrediction(sorted);
+      } catch (error: any) {
+        console.error(error);
+        setAnyError(true);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
+      <div className="bg-white h-5/6 w-5/6 p-8 rounded-lg shadow-lg">
+        <h1 className="text-2xl font-bold">동물상 분석기</h1>
+        <div className="mt-4 text-gray-700">
+          <div className="flex justify-center mb-4">
+            <button
+              className="flex items-center bg-gray-500 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-600"
+              onClick={() => document.getElementById("upload-input")?.click()}
+              style={{ marginRight: 8 }}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleUpload}
+                style={{ display: "none" }}
+                id="upload-input"
+              />
+              <Image
+                alt="사진업로드"
+                src="/icons/upload.png"
+                width={32}
+                height={32}
+              />
+              PC에서 사진을 선택
+            </button>
+            {webcamEnabled ? (
+              <button
+                className="flex items-center bg-gray-500 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-600"
+                onClick={handleCapture}
+              >
+                캡쳐
+              </button>
+            ) : (
+              <button
+                className="flex items-center bg-gray-500 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-600"
+                onClick={() => setWebcamEnabled(true)}
+              >
+                <Image
+                  alt="CAM 실행"
+                  src="/icons/cam.png"
+                  width={32}
+                  height={32}
+                />
+                웹캠을 이용해 촬영
+              </button>
+            )}
+          </div>
+          {webcamEnabled && (
+            <div className="flex justify-center mb-4">
+              <Webcam
+                audio={false}
+                ref={webcamRef}
+                screenshotFormat="image/jpeg"
+                width={640}
+                height={480}
+              />
+            </div>
+          )}
+          <div className="flex justify-center mt-8">
             <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
+              alt="dog"
+              src="/animals/dog.png"
+              width={32}
+              height={32}
+              style={{ marginRight: 4 }}
             />
-          </a>
+            <Image
+              alt="cat"
+              src="/animals/cat.png"
+              width={32}
+              height={32}
+              style={{ marginRight: 4 }}
+            />
+            <Image
+              alt="rabbit"
+              src="/animals/rabbit.png"
+              width={32}
+              height={32}
+              style={{ marginRight: 4 }}
+            />
+            <Image
+              alt="fox"
+              src="/animals/fox.png"
+              width={32}
+              height={32}
+              style={{ marginRight: 4 }}
+            />
+            <Image
+              alt="deer"
+              src="/animals/deer.png"
+              width={32}
+              height={32}
+              style={{ marginRight: 4 }}
+            />
+          </div>
         </div>
       </div>
+      <br />
+      {imageSrc && (
+        <div className="bg-white h-5/6 w-5/6 p-8 rounded-lg shadow-lg flex flex-col">
+          <h1 className="text-2xl font-bold">선택된 이미지</h1>
+          <br />
+          <div className="flex flex-col justify-center items-center mb-4">
+            <img
+              src={imageSrc}
+              alt="Captured or Uploaded"
+              style={{ maxWidth: "100%", maxHeight: "400px" }}
+            />
+            <button
+              className="flex justify-center items-center bg-green-500 text-white px-4 py-2 rounded-lg shadow hover:bg-green-600 w-96 mt-4"
+              onClick={analyzeImage}
+              disabled={loading}
+            >
+              {loading ? "분석 중" : "분석 시작"}
+            </button>
+          </div>
 
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+          {anyError && (
+            <div
+              className="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50 dark:bg-gray-800 dark:text-red-400"
+              role="alert"
+            >
+              <span className="font-medium">서비스 오류</span> 오류가
+              발생했습니다. 서버를 재시작하거나, 새로고침하세요.
+            </div>
+          )}
+        </div>
+      )}
+      <br />
 
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
+      {prediction.length != 0 && (
+        <div className="bg-white h-5/6 w-5/6 p-8 rounded-lg shadow-lg flex flex-col justify-center items-center text-center">
+          <h3 className="text-xl">
+            당신은 약 <b>{(prediction[0].score * 100).toFixed(1)}%</b>의 확률로{" "}
+            <b>{getAnimalName(prediction[0].class)}상</b> 입니다.
+          </h3>
+          <Image
+            alt="prediction icon"
+            src={getAnimalIcon(prediction[0].class)}
+            width={128}
+            height={128}
+          />
+        </div>
+      )}
     </main>
   );
-}
+};
+
+export default Home;
