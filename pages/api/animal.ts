@@ -47,7 +47,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
     model
       .classify({
-        imageUrl: "https://candy.blbt.app" + "/uploads/" + file.filename,
+        imageUrl: "https://candy.blbt.app" + "/api/download/" + file.filename,
       })
       .then((predictions: any) => {
         return res.status(200).json(predictions);
